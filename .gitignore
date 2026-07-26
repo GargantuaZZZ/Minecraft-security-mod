@@ -1,0 +1,13 @@
+.DS_Store
+build/
+.gradle/
+out/
+*.log
+*.class
+
+.idea/
+*.iml
+.vscode/
+
+run/
+runs/

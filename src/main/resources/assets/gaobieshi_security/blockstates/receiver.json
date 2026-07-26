@@ -1,0 +1,11 @@
+{
+  "variants": {
+    "powered=false": {
+      "model": "gaobieshi_security:block/receiver"
+    },
+    "powered=true": {
+      "model": "gaobieshi_security:block/receiver"
+    }
+  }
+}
+
