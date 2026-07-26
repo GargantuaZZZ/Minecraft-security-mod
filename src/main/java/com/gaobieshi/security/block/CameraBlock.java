@@ -1,18 +1,21 @@
 package com.gaobieshi.security.block;
 
 import com.gaobieshi.security.blockentity.CameraBlockEntity;
+import com.gaobieshi.security.network.GbsNetwork;
 import com.gaobieshi.security.registry.GbsBlockEntities;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.network.chat.Component;
-import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
+import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.context.BlockPlaceContext;
 import net.minecraft.world.level.BlockGetter;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.LevelAccessor;
 import net.minecraft.world.level.LevelReader;
 import net.minecraft.world.level.block.BaseEntityBlock;
 import net.minecraft.world.level.block.Block;
@@ -58,7 +61,7 @@ public class CameraBlock extends BaseEntityBlock {
     }
 
     @Override
-    public BlockState updateShape(BlockState state, Direction direction, BlockState neighborState, LevelReader level,
+    public BlockState updateShape(BlockState state, Direction direction, BlockState neighborState, LevelAccessor level,
                                   BlockPos pos, BlockPos neighborPos) {
         if (direction == Direction.UP && !state.canSurvive(level, pos)) {
             return net.minecraft.world.level.block.Blocks.AIR.defaultBlockState();
@@ -72,12 +75,25 @@ public class CameraBlock extends BaseEntityBlock {
         if (!level.isClientSide && player instanceof ServerPlayer serverPlayer) {
             CameraBlockEntity.selectFor(serverPlayer, level.dimension(), pos);
             if (level.getBlockEntity(pos) instanceof CameraBlockEntity camera) {
-                camera.sendHelp(serverPlayer);
+                if (!camera.canConfigure(serverPlayer)) {
+                    serverPlayer.sendSystemMessage(Component.literal("你没有权限配置这个高别师的摄像头。"));
+                    return InteractionResult.CONSUME;
+                }
+                GbsNetwork.openCamera(serverPlayer, pos, camera);
             } else {
                 serverPlayer.sendSystemMessage(Component.literal("已选择高别师的摄像头。"));
             }
         }
         return InteractionResult.sidedSuccess(level.isClientSide);
+    }
+
+    @Override
+    public void setPlacedBy(Level level, BlockPos pos, BlockState state, LivingEntity placer, ItemStack stack) {
+        super.setPlacedBy(level, pos, state, placer, stack);
+        if (!level.isClientSide && placer instanceof ServerPlayer player
+                && level.getBlockEntity(pos) instanceof CameraBlockEntity camera) {
+            camera.setOwnerIfAbsent(player);
+        }
     }
 
     @Override

@@ -1,6 +1,7 @@
 package com.gaobieshi.security.blockentity;
 
 import com.gaobieshi.security.block.ReceiverBlock;
+import com.gaobieshi.security.GaobieshiSecurity;
 import com.gaobieshi.security.registry.GbsBlockEntities;
 import com.gaobieshi.security.registry.GbsBlocks;
 import net.minecraft.core.BlockPos;
@@ -11,6 +12,8 @@ import net.minecraft.nbt.Tag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.sounds.SoundEvent;
+import net.minecraft.sounds.SoundSource;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.LivingEntity;
@@ -20,7 +23,10 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
 
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 
 public class CameraBlockEntity extends BlockEntity {
@@ -31,10 +37,13 @@ public class CameraBlockEntity extends BlockEntity {
 
     private boolean enabled = false;
     private String cameraName = "高别师的摄像头";
+    private String ownerName = "";
+    private final Set<String> permittedPlayers = new HashSet<>();
     private final Set<String> trustedPlayers = new HashSet<>();
     private final Set<BlockPos> watchOffsets = new HashSet<>();
     private BlockPos receiverOffset;
     private int cooldownTicks = 0;
+    private float alertVolume = 1.0F;
 
     public CameraBlockEntity(BlockPos pos, BlockState state) {
         super(GbsBlockEntities.CAMERA.get(), pos, state);
@@ -104,6 +113,7 @@ public class CameraBlockEntity extends BlockEntity {
                 if (camera.trustedPlayers.contains(playerName)) {
                     serverLevel.getServer().getPlayerList().broadcastSystemMessage(
                             Component.literal(playerName + "触发了" + camera.cameraName), false);
+                    camera.playAlertSound(serverLevel);
                     camera.triggerReceiver(serverLevel);
                 } else {
                     serverLevel.getServer().getPlayerList().broadcastSystemMessage(
@@ -124,15 +134,123 @@ public class CameraBlockEntity extends BlockEntity {
         player.sendSystemMessage(Component.literal("已选择：" + cameraName));
         player.sendSystemMessage(Component.literal("状态：" + (enabled ? "监控开启" : "监控关闭")
                 + "，监控格：" + watchOffsets.size()
-                + "，授权玩家：" + (trustedPlayers.isEmpty() ? "无" : String.join(", ", trustedPlayers))));
+                + "，授权玩家：" + (trustedPlayers.isEmpty() ? "无" : String.join(", ", trustedPlayers))
+                + "，提示音量：" + formatVolume()));
         player.sendSystemMessage(Component.literal("/gbs toggle - 打开/关闭监控"));
         player.sendSystemMessage(Component.literal("/gbs name 名称 - 设置摄像头名称"));
+        player.sendSystemMessage(Component.literal("/gbs volume 0-200 - 设置授权人员触发提示音音量"));
         player.sendSystemMessage(Component.literal("/gbs trust 玩家名 - 添加授权玩家"));
         player.sendSystemMessage(Component.literal("/gbs untrust 玩家名 - 移除授权玩家"));
-        player.sendSystemMessage(Component.literal("/gbs area addall - 添加下方5x5x5内所有空气格"));
+        player.sendSystemMessage(Component.literal("GUI 区域编辑 - 用虚拟方块选择监控区域"));
         player.sendSystemMessage(Component.literal("/gbs area clear - 清空监控区域"));
         player.sendSystemMessage(Component.literal("/gbs bind - 绑定下方5x5x5内的一个接收器"));
         player.sendSystemMessage(Component.literal("/gbs info - 查看当前配置"));
+    }
+
+    public boolean canConfigure(ServerPlayer player) {
+        String playerName = player.getGameProfile().getName();
+        return ownerName.isEmpty() || playerName.equals(ownerName) || permittedPlayers.contains(playerName);
+    }
+
+    public void setOwnerIfAbsent(ServerPlayer player) {
+        if (ownerName == null || ownerName.isEmpty()) {
+            ownerName = player.getGameProfile().getName();
+            permittedPlayers.add(ownerName);
+            setChanged();
+        }
+    }
+
+    public String getOwnerName() {
+        return ownerName == null || ownerName.isEmpty() ? "无" : ownerName;
+    }
+
+    public List<String> getPermittedPlayers() {
+        List<String> players = new ArrayList<>(permittedPlayers);
+        players.sort(Comparator.naturalOrder());
+        return players;
+    }
+
+    public void grantPermission(ServerPlayer player, String name) {
+        if (name == null || name.isBlank()) {
+            return;
+        }
+        permittedPlayers.add(name.trim());
+        setChanged();
+        player.sendSystemMessage(Component.literal("已允许配置摄像头：" + name.trim()));
+    }
+
+    public void revokePermission(ServerPlayer player, String name) {
+        if (name == null || name.isBlank()) {
+            return;
+        }
+        String cleanName = name.trim();
+        if (cleanName.equals(ownerName)) {
+            player.sendSystemMessage(Component.literal("不能移除拥有者的配置权限。"));
+            return;
+        }
+        permittedPlayers.remove(cleanName);
+        setChanged();
+        player.sendSystemMessage(Component.literal("已移除摄像头配置权限：" + cleanName));
+    }
+
+    public String getCameraName() {
+        return cameraName;
+    }
+
+    public boolean isEnabled() {
+        return enabled;
+    }
+
+    public int getAlertVolumePercent() {
+        return Math.round(alertVolume * 100.0F);
+    }
+
+    public int getWatchCount() {
+        return watchOffsets.size();
+    }
+
+    public String getTrustedPlayersText() {
+        return trustedPlayers.isEmpty() ? "无" : String.join(", ", trustedPlayers);
+    }
+
+    public List<String> getTrustedPlayers() {
+        List<String> players = new ArrayList<>(trustedPlayers);
+        players.sort(Comparator.naturalOrder());
+        return players;
+    }
+
+    public String getBoundReceiverName() {
+        if (receiverOffset == null) {
+            return "未绑定";
+        }
+
+        return getReceiverName(worldPosition.offset(receiverOffset));
+    }
+
+    public void unbindReceiver(ServerPlayer player) {
+        receiverOffset = null;
+        setChanged();
+        player.sendSystemMessage(Component.literal("已解绑接收器。"));
+    }
+
+    public boolean isWatchOffset(BlockPos offset) {
+        return watchOffsets.contains(offset);
+    }
+
+    public void addWatchOffset(BlockPos offset) {
+        watchOffsets.add(offset);
+        setChanged();
+    }
+
+    public void removeWatchOffset(BlockPos offset) {
+        watchOffsets.remove(offset);
+        setChanged();
+    }
+
+    public boolean isValidWatchOffset(BlockPos offset) {
+        return offset.getX() >= -2 && offset.getX() <= 2
+                && offset.getY() <= -1 && offset.getY() >= -5
+                && offset.getZ() >= -2 && offset.getZ() <= 2;
     }
 
     public void toggle(ServerPlayer player) {
@@ -145,6 +263,12 @@ public class CameraBlockEntity extends BlockEntity {
         cameraName = name;
         setChanged();
         player.sendSystemMessage(Component.literal("摄像头名称已设置为：" + cameraName));
+    }
+
+    public void setAlertVolume(ServerPlayer player, int percent) {
+        alertVolume = percent / 100.0F;
+        setChanged();
+        player.sendSystemMessage(Component.literal("授权人员触发提示音音量已设置为：" + formatVolume()));
     }
 
     public void trust(ServerPlayer player, String name) {
@@ -198,7 +322,9 @@ public class CameraBlockEntity extends BlockEntity {
                     if (level.getBlockState(target).is(GbsBlocks.RECEIVER.get())) {
                         receiverOffset = new BlockPos(dx, dy, dz);
                         setChanged();
-                        player.sendSystemMessage(Component.literal("已绑定接收器：" + target.getX() + ", " + target.getY() + ", " + target.getZ()));
+                        String receiverName = getReceiverName(target);
+                        player.sendSystemMessage(Component.literal("已绑定接收器：" + receiverName
+                                + " (" + target.getX() + ", " + target.getY() + ", " + target.getZ() + ")"));
                         return;
                     }
                 }
@@ -219,11 +345,42 @@ public class CameraBlockEntity extends BlockEntity {
         }
     }
 
+    private void playAlertSound(ServerLevel serverLevel) {
+        if (alertVolume <= 0.0F) {
+            return;
+        }
+
+        ResourceLocation soundId = new ResourceLocation(GaobieshiSecurity.MOD_ID, "lawson");
+        serverLevel.playSound(null, worldPosition, SoundEvent.createVariableRangeEvent(soundId),
+                SoundSource.BLOCKS, alertVolume, 1.0F);
+    }
+
+    private String getReceiverName(BlockPos pos) {
+        if (level != null && level.getBlockEntity(pos) instanceof ReceiverBlockEntity receiver) {
+            return receiver.getReceiverName();
+        }
+        return "高别师的接收器";
+    }
+
+    private String formatVolume() {
+        return Math.round(alertVolume * 100.0F) + "%";
+    }
+
     @Override
     protected void saveAdditional(CompoundTag tag) {
         super.saveAdditional(tag);
         tag.putBoolean("Enabled", enabled);
         tag.putString("CameraName", cameraName);
+        tag.putString("OwnerName", getOwnerName());
+        tag.putFloat("AlertVolume", alertVolume);
+
+        ListTag permittedTag = new ListTag();
+        for (String name : permittedPlayers) {
+            CompoundTag entry = new CompoundTag();
+            entry.putString("Name", name);
+            permittedTag.add(entry);
+        }
+        tag.put("PermittedPlayers", permittedTag);
 
         ListTag trustedTag = new ListTag();
         for (String name : trustedPlayers) {
@@ -255,6 +412,17 @@ public class CameraBlockEntity extends BlockEntity {
         super.load(tag);
         enabled = tag.getBoolean("Enabled");
         cameraName = tag.contains("CameraName") ? tag.getString("CameraName") : cameraName;
+        ownerName = tag.contains("OwnerName") ? tag.getString("OwnerName") : ownerName;
+        alertVolume = tag.contains("AlertVolume") ? tag.getFloat("AlertVolume") : alertVolume;
+
+        permittedPlayers.clear();
+        ListTag permittedTag = tag.getList("PermittedPlayers", Tag.TAG_COMPOUND);
+        for (int i = 0; i < permittedTag.size(); i++) {
+            permittedPlayers.add(permittedTag.getCompound(i).getString("Name"));
+        }
+        if (!ownerName.isEmpty()) {
+            permittedPlayers.add(ownerName);
+        }
 
         trustedPlayers.clear();
         ListTag trustedTag = tag.getList("TrustedPlayers", Tag.TAG_COMPOUND);

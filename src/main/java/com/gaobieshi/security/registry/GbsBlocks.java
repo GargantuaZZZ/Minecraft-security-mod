@@ -31,6 +31,18 @@ public final class GbsBlocks {
                     .sound(SoundType.METAL)
                     .requiresCorrectToolForDrops()));
 
+    public static final RegistryObject<Block> AREA_MARKER = BLOCKS.register("area_marker", () ->
+            new Block(BlockBehaviour.Properties.of()
+                    .noCollission()
+                    .noOcclusion()
+                    .strength(-1.0F, 3600000.0F)));
+
+    public static final RegistryObject<Block> AREA_MARKER_SELECTED = BLOCKS.register("area_marker_selected", () ->
+            new Block(BlockBehaviour.Properties.of()
+                    .noCollission()
+                    .noOcclusion()
+                    .strength(-1.0F, 3600000.0F)));
+
     public static final RegistryObject<Item> CAMERA_ITEM = ITEMS.register("camera", () ->
             new BlockItem(CAMERA.get(), new Item.Properties()));
 
@@ -40,4 +52,3 @@ public final class GbsBlocks {
     private GbsBlocks() {
     }
 }
-

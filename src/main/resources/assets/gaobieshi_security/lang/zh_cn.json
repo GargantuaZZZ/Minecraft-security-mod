@@ -1,6 +1,7 @@
 {
   "itemGroup.gaobieshi_security.main": "高别师安防",
   "block.gaobieshi_security.camera": "高别师的摄像头",
-  "block.gaobieshi_security.receiver": "高别师的接收器"
+  "block.gaobieshi_security.receiver": "高别师的接收器",
+  "item.gaobieshi_security.camera": "高别师的摄像头",
+  "item.gaobieshi_security.receiver": "高别师的接收器"
 }
-

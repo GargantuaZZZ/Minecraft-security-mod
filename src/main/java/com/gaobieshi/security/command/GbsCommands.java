@@ -2,6 +2,7 @@ package com.gaobieshi.security.command;
 
 import com.gaobieshi.security.blockentity.CameraBlockEntity;
 import com.mojang.brigadier.CommandDispatcher;
+import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
@@ -19,6 +20,10 @@ public final class GbsCommands {
                         .then(Commands.argument("name", StringArgumentType.greedyString())
                                 .executes(ctx -> withCamera(ctx.getSource(), (camera, player) ->
                                         camera.setCameraName(player, StringArgumentType.getString(ctx, "name"))))))
+                .then(Commands.literal("volume")
+                        .then(Commands.argument("percent", IntegerArgumentType.integer(0, 200))
+                                .executes(ctx -> withCamera(ctx.getSource(), (camera, player) ->
+                                        camera.setAlertVolume(player, IntegerArgumentType.getInteger(ctx, "percent"))))))
                 .then(Commands.literal("trust")
                         .then(Commands.argument("player", StringArgumentType.word())
                                 .executes(ctx -> withCamera(ctx.getSource(), (camera, player) ->
@@ -51,6 +56,10 @@ public final class GbsCommands {
         ServerPlayer player = source.getPlayerOrException();
         CameraBlockEntity camera = CameraBlockEntity.getSelected(player);
         if (camera == null) {
+            return 0;
+        }
+        if (!camera.canConfigure(player)) {
+            player.sendSystemMessage(net.minecraft.network.chat.Component.literal("你没有权限配置这个高别师的摄像头。"));
             return 0;
         }
         action.run(camera, player);
